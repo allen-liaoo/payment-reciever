@@ -31,8 +31,8 @@ func init() {
 	client = cclient
 }
 
-func getMaxPriorityFee() (*big.Int, error) {
-	return client.SuggestGasTipCap(context.Background())
+func getGasPrice() (*big.Int, error) {
+	return client.SuggestGasPrice(context.Background())
 }
 
 func getWalletBalance(walletAddress string) (*big.Int, error) {

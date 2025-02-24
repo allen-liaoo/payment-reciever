@@ -14,7 +14,7 @@ func main() {
 	if usdcAddr == "" || myWalletAddr == "" {
 		panic("USDC_ADDRESS or MY_WALLET_ADDRESS environment variable is not set")
 	}
-	fee, err := getMaxPriorityFee()
+	fee, err := getGasPrice()
 	if err != nil {
 		panic(err)
 	}
