@@ -8,3 +8,7 @@ Payment reciever logic
       - Else,
         - Send ETH from financing wallet to middleware wallet
         - Once it is done sending, send Token from middleware wallet to reciever wallet
+
+```bash
+go run .
+```
