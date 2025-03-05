@@ -7,9 +7,11 @@ import (
 	"math/big"
 	"os"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/joho/godotenv"
 
 	wallet "allen-liaoo/payment-reciever/wallet"
@@ -70,7 +72,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("middleware balance (usdc): ", balance, " (", wallet.FromRawUnit(balance, decimals), ")")
+	fmt.Println("middleware balance (usdc): ", balance, " (", wallet.FromSmallestUnit(balance, decimals), ")")
 
 	// TODO: Check if middleware wallet has expected balance to sweep
 	if balance.Cmp(big.NewInt(0)) < 0 {
@@ -92,38 +94,63 @@ func main() {
 	// }
 	// fmt.Println("gas from provider to middleware: ", gas2)
 
-	gastipcap, err := client.SuggestGasTipCap(context.Background())
+	baseFee, err := client.SuggestGasPrice(context.Background())
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("gas tip cap: ", gastipcap)
+	fmt.Println("base fee: ", baseFee)
+
+	gasTipCap, err := client.SuggestGasTipCap(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	gasTipCap.Add(gasTipCap, new(big.Int).Mul(big.NewInt(params.GWei), big.NewInt(2)))
+	fmt.Println("priority fee: ", gasTipCap)
+
+	// add base fee to priority fee + 1 Gwei just in case
+	gasFeeCap := new(big.Int).Add(baseFee, gasTipCap)
+	fmt.Println("gas fee cap: ", gasFeeCap)
 
 	// TODO: Check if gas cost is affordable
 	threshold := big.NewInt(0)
-	if threshold.Cmp(gastipcap) > 0 {
-		panic("gas tip cap is too high")
+	if threshold.Cmp(gasFeeCap) > 0 {
+		panic("gas fee cap is too high")
 	}
 
 	// sweep transaction
 	// 1. Transfer ETH gas fee from provider wallet to middleware wallet
-	tx1, err := wallet.SendTx(client, providerWalletAddress, middlewareWallet.Address, gastipcap, nil, gastipcap, nil, providerWalletPK)
+	tx1, err := wallet.SendTx(&wallet.TxInput{
+		Client:     client,
+		From:       providerWalletAddress,
+		To:         middlewareWallet.Address,
+		Amount:     gasFeeCap,
+		GasTipCap:  gasTipCap,
+		GasFeeCap:  gasFeeCap,
+		PrivateKey: providerWalletPK,
+	})
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("tx1: ", tx1)
 	fmt.Println("tx1 hash: ", tx1.Hash().Hex())
 	fmt.Println("waiting for tx1 to be mined...")
-	// _, err = bind.WaitMined(context.Background(), client, tx1)
-	// if err != nil {
-	// 	panic(err)
-	// }
-
-	// 2. Transfer USDC from middleware wallet to destination wallet
-	tx2, err := wallet.SendTokenTx(client, middlewareWallet.Address, desAddress, usdcAddress, balance, nil, gastipcap, privateKey)
+	_, err = bind.WaitMined(context.Background(), client, tx1)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("tx2: ", tx2)
+
+	// 2. Transfer USDC from middleware wallet to destination wallet
+	tx2, err := wallet.SendTokenTx(usdcAddress, &wallet.TxInput{
+		Client:     client,
+		From:       middlewareWallet.Address,
+		To:         desAddress,
+		Amount:     balance,
+		GasTipCap:  gasTipCap,
+		GasFeeCap:  gasFeeCap,
+		PrivateKey: privateKey,
+	})
+	if err != nil {
+		panic(err)
+	}
 	fmt.Println("tx2 hash: ", tx2.Hash().Hex())
 }
 

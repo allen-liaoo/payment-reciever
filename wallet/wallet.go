@@ -80,7 +80,7 @@ func GetTokenBalance(client *ethclient.Client, contractAddress common.Address, w
 
 // for pre EIP-1995 transactions
 func EstimateGas(client *ethclient.Client, from common.Address, to common.Address, amount *big.Int, isToken bool) (uint64, []byte, error) {
-	var rawAmount = ToRawUnit(amount, 18)
+	var rawAmount = ToSmallestUnit(amount, 18)
 	var data []byte = nil
 	if isToken {
 		data = BuildTokenTxDataField(to, rawAmount) // data field for contract tokens transfer
@@ -95,15 +95,15 @@ func EstimateGas(client *ethclient.Client, from common.Address, to common.Addres
 	return gas, data, err
 }
 
-// display unit to raw unit
-func FromRawUnit(amount *big.Int, decimals uint8) *big.Int {
+// from/to smallest unit as defined by decimals
+func FromSmallestUnit(amount *big.Int, decimals uint8) *big.Int {
 	base := big.NewInt(10)
 	var newAmount big.Int
 	newAmount.Div(amount, base.Exp(base, new(big.Int).SetInt64(int64(decimals)), nil))
 	return &newAmount
 }
 
-func ToRawUnit(amount *big.Int, decimals uint8) *big.Int {
+func ToSmallestUnit(amount *big.Int, decimals uint8) *big.Int {
 	base := big.NewInt(10)
 	var newAmount big.Int
 	newAmount.Mul(amount, base.Exp(base, big.NewInt(int64(decimals)), nil))
@@ -111,12 +111,24 @@ func ToRawUnit(amount *big.Int, decimals uint8) *big.Int {
 }
 
 // returns the hash of the transaction (in hex)
-func SendTx(client *ethclient.Client, from common.Address, to common.Address, amount *big.Int, gasFeeCap *big.Int, gasTipCap *big.Int, data []byte, privateKey *ecdsa.PrivateKey) (*types.Transaction, error) {
-	nonce, err := client.PendingNonceAt(context.Background(), from)
+type TxInput struct {
+	Client     *ethclient.Client
+	From       common.Address
+	To         common.Address
+	Amount     *big.Int
+	GasFeeCap  *big.Int
+	GasTipCap  *big.Int
+	GasUnit    uint64
+	Data       []byte
+	PrivateKey *ecdsa.PrivateKey
+}
+
+func sendTx(input *TxInput) (*types.Transaction, error) {
+	nonce, err := input.Client.PendingNonceAt(context.Background(), input.From)
 	if err != nil {
 		return nil, err
 	}
-	chainID, err := client.NetworkID(context.Background())
+	chainID, err := input.Client.NetworkID(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -125,18 +137,18 @@ func SendTx(client *ethclient.Client, from common.Address, to common.Address, am
 	tx := types.NewTx(&types.DynamicFeeTx{
 		ChainID:   chainID,
 		Nonce:     nonce,
-		To:        &to,
-		Value:     amount,
-		GasFeeCap: gasFeeCap,
-		GasTipCap: big.NewInt(0),
-		Gas:       21000,
-		Data:      data,
+		To:        &input.To,
+		Value:     input.Amount,
+		GasFeeCap: input.GasFeeCap,
+		GasTipCap: input.GasTipCap,
+		Gas:       input.GasUnit,
+		Data:      input.Data,
 	})
-	signedTx, err := types.SignTx(tx, types.LatestSignerForChainID(chainID), privateKey)
+	signedTx, err := types.SignTx(tx, types.LatestSignerForChainID(chainID), input.PrivateKey)
 	if err != nil {
 		return nil, err
 	}
-	err = client.SendTransaction(context.Background(), signedTx)
+	err = input.Client.SendTransaction(context.Background(), signedTx)
 	if err != nil {
 		return nil, err
 	}
@@ -157,9 +169,18 @@ func SendTx(client *ethclient.Client, from common.Address, to common.Address, am
 	// }
 }
 
-func SendTokenTx(client *ethclient.Client, from common.Address, to common.Address, contractAddress common.Address, amount *big.Int, gasFeeCap *big.Int, gasTipCap *big.Int, privateKey *ecdsa.PrivateKey) (*types.Transaction, error) {
-	data := BuildTokenTxDataField(to, amount)
-	return SendTx(client, from, contractAddress, big.NewInt(0), gasFeeCap, gasTipCap, data, privateKey)
+func SendTx(input *TxInput) (*types.Transaction, error) {
+	input.GasUnit = 21000
+	return sendTx(input)
+}
+
+// automatically builds data field
+func SendTokenTx(contractAddress common.Address, input *TxInput) (*types.Transaction, error) {
+	input.Data = BuildTokenTxDataField(input.To, input.Amount)
+	input.To = contractAddress
+	input.Amount = big.NewInt(0)
+	input.GasUnit = 45000
+	return SendTx(input)
 }
 
 func BuildTokenTxDataField(to common.Address, amount *big.Int) []byte {
