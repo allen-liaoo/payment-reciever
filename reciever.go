@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
+	"log"
 	"math/big"
 	"os"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -53,6 +55,7 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+	desAddress = providerWalletAddress
 }
 
 func main() {
@@ -76,28 +79,14 @@ func main() {
 
 	// TODO: Check if middleware wallet has expected balance to sweep
 	if balance.Cmp(big.NewInt(0)) < 0 {
-		panic("middleware wallet has not enough balance to sweep")
+		panic("middleware wallet does not have enough balance to sweep")
 	}
 
-	// Estimate cost to sweep, including
-	// fee (base + priority) of middleware wallet to destination wallet
-	// and fee of provider wallet to middleware wallet
-	// gas1, data1, err := wallet.EstimateGas(client, middlewareWallet.Address, desAddress, balance, true)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// gas1BI := new(big.Int).SetUint64(gas1)
-	// fmt.Println("gas from middleware to destination: ", gas1)
-	// gas2, data2, err := wallet.EstimateGas(client, providerWalletAddress, middlewareWallet.Address, gas1, false)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// fmt.Println("gas from provider to middleware: ", gas2)
-
-	baseFee, err := client.SuggestGasPrice(context.Background())
+	header, err := client.HeaderByNumber(context.Background(), nil)
 	if err != nil {
 		panic(err)
 	}
+	baseFee := header.BaseFee
 	fmt.Println("base fee: ", baseFee)
 
 	gasTipCap, err := client.SuggestGasTipCap(context.Background())
@@ -111,6 +100,21 @@ func main() {
 	gasFeeCap := new(big.Int).Add(baseFee, gasTipCap)
 	fmt.Println("gas fee cap: ", gasFeeCap)
 
+	data := wallet.BuildTokenTxDataField(desAddress, balance) // data field for contract tokens transfer
+	msg := ethereum.CallMsg{                                  // test transaction
+		From:  middlewareWallet.Address,
+		To:    &usdcAddress,
+		Value: big.NewInt(0), // value
+		Data:  data,
+	}
+	middlewareGasLimit, err := client.EstimateGas(context.Background(), msg)
+	if err != nil {
+		log.Printf("EstimateGas failed, using default value 65000: %v", err)
+		middlewareGasLimit = 65000
+	}
+	middlewareGasFee := new(big.Int).Mul(gasFeeCap, big.NewInt(int64(middlewareGasLimit)))
+	fmt.Println("middleware gas fee: ", middlewareGasFee)
+
 	// TODO: Check if gas cost is affordable
 	threshold := big.NewInt(0)
 	if threshold.Cmp(gasFeeCap) > 0 {
@@ -123,9 +127,10 @@ func main() {
 		Client:     client,
 		From:       providerWalletAddress,
 		To:         middlewareWallet.Address,
-		Amount:     gasFeeCap,
+		Amount:     middlewareGasFee,
 		GasTipCap:  gasTipCap,
 		GasFeeCap:  gasFeeCap,
+		GasUnit:    21000,
 		PrivateKey: providerWalletPK,
 	})
 	if err != nil {
@@ -133,10 +138,11 @@ func main() {
 	}
 	fmt.Println("tx1 hash: ", tx1.Hash().Hex())
 	fmt.Println("waiting for tx1 to be mined...")
-	_, err = bind.WaitMined(context.Background(), client, tx1)
+	receipt, err := bind.WaitMined(context.Background(), client, tx1)
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println("tx1 mined, hash: ", receipt.TxHash.Hex(), ", status: ", receipt.Status)
 
 	// 2. Transfer USDC from middleware wallet to destination wallet
 	tx2, err := wallet.SendTokenTx(usdcAddress, &wallet.TxInput{
@@ -146,6 +152,7 @@ func main() {
 		Amount:     balance,
 		GasTipCap:  gasTipCap,
 		GasFeeCap:  gasFeeCap,
+		GasUnit:    middlewareGasLimit,
 		PrivateKey: privateKey,
 	})
 	if err != nil {
