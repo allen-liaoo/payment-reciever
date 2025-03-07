@@ -1,23 +1,19 @@
-package wallet
+package util
 
 import (
 	"context"
 	"crypto/ecdsa"
-	"encoding/json"
 	"fmt"
-	"io"
 	"math/big"
-	"os"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	hdwallet "github.com/miguelmota/go-ethereum-hdwallet"
 	"golang.org/x/crypto/sha3"
 
-	contracts "allen-liaoo/payment-reciever/contracts"
+	"allen-liaoo/payment-reciever/erc20"
 )
 
 type Contract struct {
@@ -25,19 +21,11 @@ type Contract struct {
 	Decimals uint8
 }
 
-var knownContracts map[string]Contract
-
-func init() {
-
-	file, err := os.Open("wallet/decimals.json")
-	if err != nil {
-		panic(err)
-	}
-	defer file.Close()
-
-	byteValue, _ := io.ReadAll(file)
-	json.Unmarshal([]byte(byteValue), &knownContracts)
-
+var knownContracts = map[string]Contract{
+	"0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238": {
+		Name:     "USDC?",
+		Decimals: 6,
+	},
 }
 
 func GetContractDecimals(client *ethclient.Client, contractAddress common.Address) (uint8, error) {
@@ -48,7 +36,7 @@ func GetContractDecimals(client *ethclient.Client, contractAddress common.Addres
 	}
 
 	// otherwise, lookup contract decimals
-	contract, err := contracts.NewErc20(contractAddress, client)
+	contract, err := erc20.NewErc20(contractAddress, client)
 	if err != nil {
 		return 0, err
 	}
@@ -65,7 +53,7 @@ func GetContractDecimals(client *ethclient.Client, contractAddress common.Addres
 
 // return balance, decimals, error
 func GetTokenBalance(client *ethclient.Client, contractAddress common.Address, walletAddress common.Address) (*big.Int, error) {
-	contract, err := contracts.NewErc20(contractAddress, client)
+	contract, err := erc20.NewErc20(contractAddress, client)
 	if err != nil {
 		return big.NewInt(0), err
 	}
@@ -77,23 +65,6 @@ func GetTokenBalance(client *ethclient.Client, contractAddress common.Address, w
 
 	return balance, nil
 }
-
-// for pre EIP-1995 transactions
-// func EstimateGas(client *ethclient.Client, from common.Address, to common.Address, amount *big.Int, isToken bool) (uint64, []byte, error) {
-// 	var data []byte = nil
-// 	if isToken {
-// 		data = BuildTokenTxDataField(to, amount) // data field for contract tokens transfer
-// 		amount = big.NewInt(0)
-// 	}
-// 	msg := ethereum.CallMsg{ // test transaction
-// 		From:  from,
-// 		To:    &to,
-// 		Value: amount, // value
-// 		Data:  data,
-// 	}
-// 	gas, err := client.EstimateGas(context.Background(), msg)
-// 	return gas, data, err
-// }
 
 // from/to smallest unit as defined by decimals
 func FromSmallestUnit(amount *big.Int, decimals uint8) *big.Int {
@@ -154,19 +125,6 @@ func sendTx(input *TxInput) (*types.Transaction, error) {
 	}
 
 	return signedTx, nil
-	// Legacy Transaction
-	// tx := types.NewTransaction(
-	// 	nonce,
-	// 	to,
-	// 	amount,
-	// 	gasLimit,
-	// 	gasPrice,
-	// 	data,
-	// )
-	// signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), privateKey)
-	// if err != nil {
-	// 	return "", err
-	// }
 }
 
 func SendTx(input *TxInput) (*types.Transaction, error) {
@@ -186,12 +144,10 @@ func BuildTokenTxDataField(to common.Address, amount *big.Int) []byte {
 	hash := sha3.NewLegacyKeccak256()
 	hash.Write(transferFnSignature)
 	methodID := hash.Sum(nil)[:4] // method ID is first four bytes
-	fmt.Println("method id:", hexutil.Encode(methodID))
 
 	paddedAddress := common.LeftPadBytes(to.Bytes(), 32)
-	fmt.Println("address:", hexutil.Encode(paddedAddress))
 	paddedAmount := common.LeftPadBytes(amount.Bytes(), 32)
-	fmt.Println("amount:", hexutil.Encode(paddedAmount))
+
 	var data []byte
 	data = append(data, methodID...)
 	data = append(data, paddedAddress...)
