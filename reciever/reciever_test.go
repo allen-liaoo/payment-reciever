@@ -69,7 +69,7 @@ func TestHandleMiddleware(t *testing.T) {
 
 			// Now handle the middleware wallet (sweep funds)
 			startTime := time.Now()
-			result, err := HandleMiddleware(middlewareWallet, privateKey, USDCAmount, big.NewInt(0))
+			result, err := SweepMiddleware(middlewareWallet, privateKey, USDCAmount, big.NewInt(0))
 			elapsedTime := time.Since(startTime)
 
 			assert.NoError(t, err)

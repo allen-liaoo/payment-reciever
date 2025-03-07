@@ -29,7 +29,7 @@ func main() {
 	}
 	fmt.Println("middleware wallet address: ", middlewareWallet.Address.Hex())
 
-	result, error := reciever.HandleMiddleware(middlewareWallet, privateKey, big.NewInt(0), big.NewInt(0))
+	result, error := reciever.SweepMiddleware(middlewareWallet, privateKey, big.NewInt(0), big.NewInt(0))
 	fmt.Printf("%#v\n", result)
 	if error != nil {
 		panic(error)

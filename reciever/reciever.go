@@ -70,7 +70,7 @@ type PaymentResult struct {
 
 // Check if a middleware wallet has enough balance to sweep, then sweep and return the transaction receipt
 // from providerWallet to middleware, and the hex of the transaction from middleware to destination wallet
-func HandleMiddleware(middlewareWallet *accounts.Account, privateKey *ecdsa.PrivateKey, minBalance *big.Int, gasCostThreshold *big.Int) (*PaymentResult, error) {
+func SweepMiddleware(middlewareWallet *accounts.Account, privateKey *ecdsa.PrivateKey, minBalance *big.Int, gasCostThreshold *big.Int) (*PaymentResult, error) {
 
 	result := &PaymentResult{
 		ProviderToMiddlewareReceipt: nil,
