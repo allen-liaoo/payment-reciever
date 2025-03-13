@@ -2,20 +2,17 @@ package testing
 
 import (
 	"fmt"
-	"math/big"
 	"os"
 
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/params"
 )
 
 // this function creates a goroutine
-// shutdown is a two-way channel; the buffer size should be 1
-// send a nil value to shutdown the chain, and afterwards, receive nil if the chain shutdown successfully, or an error if the chain failed to shutdown
-func CreateChain(rpcHost string, rpcPort int, shutdown chan error) error {
+// shutdown is a two-way channel
+// send a nil value to shutdown the chain, and afterwards, receive nil if the chain shutdown successfully, or error(s) if the chain failed to shutdown
+func CreateChain(rpcHost string, rpcPort int, genesis *core.Genesis, shutdown chan error) error {
 	// init directory to store chain data
 	datadir := "./privatechain"
 	os.RemoveAll(datadir)
@@ -36,15 +33,6 @@ func CreateChain(rpcHost string, rpcPort int, shutdown chan error) error {
 	stack, err := node.New(config)
 	if err != nil {
 		return fmt.Errorf("failed to create Ethereum node: %v", err)
-	}
-
-	chainConfig := params.TestChainConfig
-	chainConfig.ChainID = big.NewInt(1234)
-	genesis := &core.Genesis{
-		Config:     chainConfig,
-		Difficulty: big.NewInt(0x1),
-		GasLimit:   0x8000000,
-		Alloc:      make(types.GenesisAlloc),
 	}
 
 	ethConfig := &eth.Config{Genesis: genesis}
@@ -73,5 +61,5 @@ func waitForShutdown(shutdown chan error, stack *node.Node) {
 		shutdown <- fmt.Errorf("error during shutdown: %v", err)
 		return
 	}
-	close(shutdown) // signal successful shutdown
+	shutdown <- nil // signal successful shutdown
 }
