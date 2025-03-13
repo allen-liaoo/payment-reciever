@@ -13,9 +13,9 @@ import (
 )
 
 // this function creates a goroutine
-// shutdown is a channel to signal the chain to shutdown
-// shutdownResult is the channel to signal that the chain has been shutdown (or errored)
-func CreateChain(rpcHost string, rpcPort int, shutdown <-chan any, shutdownResult chan<- error) error {
+// shutdown is a two-way channel; the buffer size should be 1
+// send a nil value to shutdown the chain, and afterwards, receive nil if the chain shutdown successfully, or an error if the chain failed to shutdown
+func CreateChain(rpcHost string, rpcPort int, shutdown chan error) error {
 	// init directory to store chain data
 	datadir := "./privatechain"
 	os.RemoveAll(datadir)
@@ -61,17 +61,17 @@ func CreateChain(rpcHost string, rpcPort int, shutdown <-chan any, shutdownResul
 
 	// creates a new goroutine inside this function (not relying on user of the function to create a goroutine)
 	// because if the chain wasn't created successfully, we want to return the error to the user immediatel
-	go waitForShutdown(shutdown, shutdownResult, stack)
+	go waitForShutdown(shutdown, stack)
 	return nil
 }
 
-func waitForShutdown(shutdown <-chan any, shutdownResult chan<- error, stack *node.Node) {
+func waitForShutdown(shutdown chan error, stack *node.Node) {
 	<-shutdown // wait for shutdown signal
 
 	err := stack.Close()
 	if err != nil {
-		shutdownResult <- fmt.Errorf("error during shutdown: %v", err)
+		shutdown <- fmt.Errorf("error during shutdown: %v", err)
 		return
 	}
-	close(shutdownResult) // signal successful shutdown
+	close(shutdown) // signal successful shutdown
 }

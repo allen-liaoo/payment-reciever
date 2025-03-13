@@ -11,12 +11,11 @@ import (
 )
 
 func main() {
-	shutdown := make(chan any, 1)
-	shutdownRes := make(chan error, 1)
+	shutdown := make(chan error, 1)
 	rpcHost := "127.0.0.1"
 	rpcPort := 8545
 	rpcURL := "http://" + rpcHost + ":" + fmt.Sprintf("%d", rpcPort)
-	err := testing.CreateChain(rpcHost, rpcPort, shutdown, shutdownRes) // wait for chain to be created
+	err := testing.CreateChain(rpcHost, rpcPort, shutdown) // wait for chain to be created
 	if err != nil {
 		log.Fatalf("Failed to create chain: %v", err)
 	}
@@ -32,7 +31,11 @@ func main() {
 	}
 	log.Print(id)
 
-	shutdown <- nil // signal chain to shutdown
-	<-shutdownRes   // wait for shutdown
-
+	shutdown <- nil   // signal chain to shutdown
+	res := <-shutdown // wait for shutdown
+	if res != nil {
+		log.Fatalf("%v", res)
+	} else {
+		log.Printf("Chain shutdown successfully")
+	}
 }
