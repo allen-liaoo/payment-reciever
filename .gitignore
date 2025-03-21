@@ -25,3 +25,5 @@ go.work.sum
 .env
 
 privatechain/
+
+node_module/

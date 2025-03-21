@@ -1,0 +1,17 @@
+# !bin/bash
+
+# make hardhat node exit when parent process exits
+trap 'kill 0' EXIT
+
+# cleanup
+rm -rf ignition/deployments
+
+# run in child process
+npx hardhat node &
+
+sleep 1
+
+# send "y" so it deploys contract
+echo "y" | npx hardhat ignition deploy ignition/modules/USDTMod.js --network localhost 
+
+wait
