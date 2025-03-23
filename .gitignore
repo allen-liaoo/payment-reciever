@@ -26,4 +26,8 @@ go.work.sum
 
 privatechain/
 
-node_module/
+node_modules/
+
+**/harness/artifacts/
+**/harness/cache/
+**/harness/ignition/deployments/
